@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Prueba de micrófono — TARIFA DJ</title>
+<style>
+*{box-sizing:border-box}body{font-family:system-ui,-apple-system,sans-serif;background:#f4f7fb;color:#17233a;margin:0;padding:18px}.card{max-width:470px;margin:24px auto;background:#fff;padding:24px;border-radius:20px;box-shadow:0 8px 28px #0001}h1{font-size:25px}button{width:100%;padding:20px 12px;border:0;border-radius:16px;background:#2463cf;color:white;font-weight:800;font-size:22px;margin:14px 0;min-height:74px}button.escuchando{background:#138442}button.procesando{background:#c62828}button:disabled{opacity:.85}#estado{font-size:18px;font-weight:700;min-height:55px}textarea{display:block;width:100%;min-height:115px;border:1px solid #b5c3d4;border-radius:12px;padding:12px;font-size:19px;margin-top:8px}small{display:block;line-height:1.6;color:#475569} .secondary{background:#e8eef8;color:#17233a;font-size:16px;min-height:48px;margin-top:8px}#diagnostico{font-size:14px;white-space:pre-wrap;background:#f3f5f9;border-radius:10px;padding:12px;margin-top:12px}
+</style>
+</head>
+<body><main class="card">
+<h1>🎤 TARIFA DJ</h1><p>Prueba independiente del micrófono — dirección en inglés</p>
+<button type="button" id="hablar">🎤 Activar micrófono</button>
+<p id="estado" role="status" aria-live="polite">Presiona el botón para hablar.</p>
+<label for="direccion"><strong>Dirección reconocida:</strong></label>
+<textarea id="direccion" placeholder="211 Midland Avenue, Kearny, New Jersey" autocomplete="street-address"></textarea>
+<button type="button" id="limpiar" class="secondary">✕ Borrar dirección</button>
+<div id="diagnostico" aria-live="polite"></div>
+<small>Abre esta página con Safari desde una dirección <strong>https://</strong>, por ejemplo GitHub Pages. Un archivo descargado (file://) no es una prueba confiable. El reconocimiento depende de la compatibilidad de Safari y de los permisos del sistema.</small>
+</main>
+<script>
+'use strict';
+const btn=document.getElementById('hablar');
+const statusEl=document.getElementById('estado');
+const field=document.getElementById('direccion');
+const diag=document.getElementById('diagnostico');
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let recognition=null, isListening=false, finishing=false;
+const secure=(location.protocol==='https:'||location.hostname==='localhost');
+function status(msg){statusEl.textContent=msg;}
+function diagnostic(msg){diag.textContent=msg;}
+function idle(){btn.className='';btn.disabled=false;btn.textContent='🎤 Activar micrófono';isListening=false;finishing=false;}
+function listening(){btn.className='escuchando';btn.disabled=false;btn.textContent='🟢 Escuchando… (toca para detener)';isListening=true;finishing=false;status('Escuchando… Diga la dirección en inglés.');}
+function processing(){btn.className='procesando';btn.disabled=true;btn.textContent='🔴 Procesando dirección…';isListening=false;finishing=true;status('Procesando la dirección…');}
+function explainError(error){const messages={ 'not-allowed':'Permiso denegado. Revisa Ajustes → Apps → Safari → Micrófono y autoriza el acceso al sitio.', 'service-not-allowed':'El servicio de reconocimiento de voz no está permitido en este Safari.', 'audio-capture':'Safari no pudo acceder al micrófono. Revisa permisos y si otra aplicación está usando el audio.', 'network':'El reconocimiento necesita conexión a internet. Comprueba tu conexión y vuelve a intentar.', 'no-speech':'No se detectó voz. Toca el botón y habla cerca del teléfono.', 'language-not-supported':'El idioma inglés (en-US) no está disponible para reconocimiento aquí.', 'aborted':'Reconocimiento detenido.', 'bad-grammar':'No se pudo interpretar el reconocimiento.'};return messages[error]||('Error del reconocimiento: '+error);}
+function startRecognition(){
+ if(!secure){status('Safari puede bloquear el micrófono al abrir un HTML descargado. Usa una página HTTPS.');diagnostic('Página actual: '+location.protocol+' | Publica este archivo en GitHub Pages para probar.');return;}
+ if(!SR){status('Esta versión de Safari no ofrece reconocimiento de voz para esta página.');diagnostic('SpeechRecognition / webkitSpeechRecognition no disponible. Actualiza iOS/Safari y prueba desde HTTPS.');return;}
+ try{
+   const r=new SR();recognition=r;r.lang='en-US';r.interimResults=false;r.continuous=false;r.maxAlternatives=1;
+   status('Solicitando micrófono… Si Safari pregunta, selecciona Permitir.');
+   diagnostic('Intentando iniciar reconocimiento en inglés (en-US).');
+   r.onstart=()=>{if(recognition!==r)return;listening();diagnostic('Micrófono activado.');};
+   r.onspeechend=()=>{if(recognition!==r)return;processing();try{r.stop();}catch(e){}};
+   r.onresult=(e)=>{if(recognition!==r)return;const transcript=Array.from(e.results).map(x=>x[0].transcript).join(' ').trim();field.value=transcript;processing();status('Dirección reconocida. Comprueba el número, la calle, la ciudad y el estado.');diagnostic('Se reconoció: '+transcript);};
+   r.onerror=(e)=>{if(recognition!==r)return;status(explainError(e.error));diagnostic('Código de error de Safari: '+e.error);idle();};
+   r.onend=()=>{if(recognition!==r)return;recognition=null;idle();if(statusEl.textContent==='Procesando la dirección…')status('No se obtuvo una dirección. Inténtalo otra vez.');};
+   r.start();
+ }catch(e){idle();status('No se pudo iniciar el micrófono: '+e.message);diagnostic('Detalle: '+String(e));}
+}
+btn.addEventListener('click',()=>{if(isListening && recognition){processing();try{recognition.stop();}catch(e){idle();status('No se pudo detener: '+e.message);}return;}if(finishing)return;startRecognition();});
+document.getElementById('limpiar').addEventListener('click',()=>{field.value='';status('Dirección borrada. Puedes volver a hablar.');});
+diagnostic('Modo: '+location.protocol+' | Reconocimiento de voz: '+(SR?'detectado':'no detectado')+' | Sitio seguro: '+(secure?'sí':'no'));
+</script></body></html>
