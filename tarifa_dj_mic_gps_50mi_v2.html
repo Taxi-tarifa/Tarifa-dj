@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TARIFA DJ | Voice and GPS Address Test</title><style>
+*{box-sizing:border-box}body{margin:0;background:#f3f6fa;color:#152238;font:16px system-ui,-apple-system,Arial,sans-serif;padding:18px}.card{max-width:560px;margin:auto;background:#fff;border-radius:18px;padding:22px;box-shadow:0 5px 25px #0001}h1{font-size:25px;margin:0 0 8px}p{line-height:1.4}.muted{color:#536179;font-size:14px}.status{padding:10px 12px;background:#eef2f7;border-radius:10px;margin:10px 0}button{border:0;border-radius:12px;padding:13px 16px;font-size:16px;font-weight:700;cursor:pointer}button:disabled{opacity:.55}#mic{width:100%;background:#215bd0;color:#fff;font-size:20px;padding:19px}#mic.listening{background:#16803f}#mic.processing{background:#bb3030}label{font-weight:650;display:block;margin:14px 0 6px}textarea,input{display:block;width:100%;border:1px solid #b5c0d0;border-radius:10px;padding:12px;font-size:17px}textarea{min-height:82px}.actions{display:flex;gap:8px;margin-top:9px}.actions button{flex:1;background:#e5ecf5;color:#243752}.suggestion{padding:13px 10px;border-bottom:1px solid #e3e8f0;display:block;width:100%;background:white;color:#17243c;text-align:left;font-weight:500}#suggestions{border:1px solid #dce2eb;border-radius:10px;overflow:hidden}.ok{color:#147b36}.warn{color:#a24215}.selected{background:#f0f8f2;border-radius:9px;padding:10px;min-height:20px}a.go{display:block;text-align:center;background:#1762bb;color:#fff;border-radius:12px;padding:14px;text-decoration:none;font-weight:700;margin-top:12px}.hide{display:none}details{margin-top:20px;border-top:1px solid #e5e9f0;padding-top:10px}#log{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;color:#536179}.foot{margin-top:14px;font-size:12px;color:#536179}
+</style></head><body><main class="card"><h1>🎤 TARIFA DJ</h1><p><strong>Please say your street address, city, and state.</strong></p><button id="mic" type="button">🎤 Activate Microphone</button><div class="status" id="voiceStatus" role="status">Ready to listen.</div>
+<label for="address">Recognized Address</label><textarea id="address" placeholder="211 Midland Avenue, Kearny, New Jersey" spellcheck="false"></textarea><div class="actions"><button id="clear" type="button">✕ Clear Address</button><button id="gps" type="button">📍 Update GPS</button></div><p class="muted" id="gpsStatus">GPS not requested. Search radius: 50 miles from your current location.</p>
+<label for="key">Google Maps browser API key (needed for live address suggestions)</label><input type="password" id="key" placeholder="Paste a restricted Google Maps API key" autocomplete="off"><p class="muted">For this private test only. Google Maps JavaScript API and Places API (New) must be enabled. Restrict the browser key to your GitHub Pages website. No key is stored by this page.</p><button type="button" id="enable" style="background:#e5ecf5;color:#243752;width:100%">Enable Google Address Suggestions</button><p class="muted" id="mapsStatus">Suggestions are unavailable until Google Maps is connected.</p>
+<label>Suggested Addresses (within 50 miles)</label><div id="suggestions"><p class="muted" style="padding:0 12px">Allow GPS and connect Google Maps to search.</p></div>
+<label>Selected Address</label><div id="selected" class="selected">No address selected yet.</div><a id="navigate" class="go hide" href="#" target="_blank" rel="noopener noreferrer">🧭 Open in Google Maps</a>
+<details><summary>Technical Diagnostics (English)</summary><pre id="log"></pre></details><div class="foot">Test page only • Version 2 • All customer-facing messages in English. Speech recognition may make mistakes; always verify the address before driving. The 50-mile limit applies to selectable results, not to microphone recognition.</div></main>
+<script>
+'use strict';
+const $=id=>document.getElementById(id), R=window.SpeechRecognition||window.webkitSpeechRecognition, radiusM=80467.2;
+let recognition=null, stage='idle', foundSpeech=false, current=null, mapsReady=false, placesLib=null, activeRequest=0, delay=null, selectedAddress=null, sessionToken=null;
+function log(s){const e=$('log');e.textContent+=(e.textContent?'\n':'')+s;}
+function status(s){$('voiceStatus').textContent=s;}
+function state(s){stage=s; $('mic').className=s==='listening'?'listening':s==='processing'?'processing':'';$('mic').textContent=s==='listening'?'🎤 Listening… Tap to finish':s==='processing'?'🎤 Processing Address…':'🎤 Activate Microphone';}
+const speechErrors={'not-allowed':'Microphone permission denied.','service-not-allowed':'Speech recognition is not allowed.','audio-capture':'Microphone audio could not be captured.','network':'Speech recognition network error.','no-speech':'No speech detected. Please try again.','aborted':'Recognition stopped.','language-not-supported':'English recognition is unavailable.'};
+function begin(){if(!R){status('Speech recognition is unavailable in this browser.');return;}if(!window.isSecureContext){status('Open this page from GitHub Pages over HTTPS.');return;}try{const r=new R();recognition=r;foundSpeech=false;r.lang='en-US';r.interimResults=true;r.continuous=false;r.maxAlternatives=1;status('Requesting microphone…');log('Start requested (en-US)');r.onstart=()=>{if(recognition!==r)return;state('listening');status('Listening… Please say your street address, city, and state.');log('Recognition started');};r.onaudiostart=()=>log('Browser started audio capture');r.onspeechstart=()=>log('Speech detected');r.onspeechend=()=>{if(recognition===r){state('processing');status('Processing address…');}};
+r.onresult=e=>{if(recognition!==r)return;const results=Array.from(e.results),value=results.map(x=>x[0].transcript).join(' ').trim(),final=results.some(x=>x.isFinal);if(value){$('address').value=value;foundSpeech=true;log((final?'Final result: ':'Interim result: ')+value);if(final){status('Address recognized. Please select the correct suggestion.');scheduleSearch();}else status('Listening… address detected.');}};
+r.onerror=e=>{if(recognition!==r)return;status(speechErrors[e.error]||('Recognition error: '+e.error));log('ERROR: '+e.error);};r.onend=()=>{if(recognition!==r)return;recognition=null;state('idle');log('Recognition ended'+(foundSpeech?' (with text)':' (without text)'));if(!foundSpeech)status('No address recognized. Try again.');};r.start();}catch(e){recognition=null;state('idle');status('Unable to start microphone.');log('ERROR: '+e.message);}}
+$('mic').onclick=()=>{if(recognition){if(stage==='listening'){state('processing');status('Processing address…');recognition.stop();}return;}begin();};
+$('clear').onclick=()=>{$('address').value='';selectedAddress=null, sessionToken=null;$('selected').textContent='No address selected yet.';$('navigate').classList.add('hide');sessionToken=null;$('suggestions').innerHTML='<p class="muted" style="padding:0 12px">Enter or say an address.</p>';status('Address cleared.');};
+function gps(){if(!navigator.geolocation){$('gpsStatus').textContent='GPS unavailable in this browser.';return;}$('gpsStatus').textContent='Requesting current location…';navigator.geolocation.getCurrentPosition(p=>{current={lat:p.coords.latitude,lng:p.coords.longitude};$('gpsStatus').textContent='GPS ready. Suggestions limited to 50 miles from current location (accuracy ±'+Math.round(p.coords.accuracy)+' m).';log('GPS location received');scheduleSearch();},e=>{$('gpsStatus').textContent='Unable to access GPS: '+e.message+'. Allow location permission to restrict search to 50 miles.';log('GPS error: '+e.code);},{enableHighAccuracy:true,timeout:12000,maximumAge:30000});}
+$('gps').onclick=gps;
+function loadGoogle(key){return new Promise((resolve,reject)=>{if(window.google?.maps){resolve();return;}const script=document.createElement('script');script.src='https://maps.googleapis.com/maps/api/js?key='+encodeURIComponent(key)+'&v=weekly&loading=async&callback=tarifaMapsLoaded';script.onerror=()=>reject(new Error('Google Maps failed to load.'));window.tarifaMapsLoaded=()=>resolve();document.head.appendChild(script);setTimeout(()=>{if(!window.google?.maps)reject(new Error('Google Maps did not respond.'));},15000);});}
+$('enable').onclick=async()=>{const key=$('key').value.trim();if(!key){$('mapsStatus').textContent='Enter your Google Maps browser key first.';return;}if(!current){$('mapsStatus').textContent='Allow GPS first so results can be limited to 50 miles.';gps();return;}$('enable').disabled=true;$('mapsStatus').textContent='Connecting to Google Maps…';try{await loadGoogle(key);placesLib=await google.maps.importLibrary('places');if(!placesLib.AutocompleteSuggestion)throw new Error('Places API (New) is unavailable.');mapsReady=true;sessionToken=new placesLib.AutocompleteSessionToken();$('mapsStatus').textContent='Google Maps connected. Speak or type an address to view suggestions.';log('Google Places connected');scheduleSearch();}catch(e){$('mapsStatus').textContent='Google Maps error: '+e.message+' Check API settings and allowed website.';log('Google Maps error: '+e.message);}finally{$('enable').disabled=false;}};
+$('address').addEventListener('input',scheduleSearch);
+function scheduleSearch(){clearTimeout(delay);delay=setTimeout(search,450);}
+function distanceMiles(a,b){const rad=x=>x*Math.PI/180,dLat=rad(b.lat-a.lat),dLon=rad(b.lng-a.lng),v=Math.sin(dLat/2)**2+Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dLon/2)**2;return 3958.76*2*Math.atan2(Math.sqrt(v),Math.sqrt(1-v));}
+ async function search(){
+  const input=$('address').value.trim(), id=++activeRequest;
+  if(!input){$('suggestions').textContent='';return;}
+  if(!current){$('suggestions').textContent='Allow GPS to search within 50 miles.';return;}
+  if(!mapsReady){$('suggestions').textContent='Connect Google Maps to see address suggestions.';return;}
+  $('suggestions').textContent='Searching nearby addresses…';
+  try{
+    if(!sessionToken)sessionToken=new placesLib.AutocompleteSessionToken();
+    const request={input,language:'en-US',region:'us',origin:current,
+      locationBias:{center:current,radius:radiusM},sessionToken};
+    const response=await placesLib.AutocompleteSuggestion.fetchAutocompleteSuggestions(request);
+    if(id!==activeRequest)return;
+    const predictions=(response.suggestions||[]).filter(x=>x.placePrediction).slice(0,8);
+    $('suggestions').textContent='';
+    if(!predictions.length){$('suggestions').textContent='No suggestions found. Please try a more complete address.';return;}
+    for(const item of predictions){
+      const prediction=item.placePrediction;
+      const b=document.createElement('button');b.className='suggestion';b.type='button';
+      b.textContent='📍 '+(prediction.text?.text||'Address suggestion');
+      b.onclick=async()=>{
+        b.disabled=true;status('Verifying address within 50 miles…');
+        try{
+          const place=prediction.toPlace();
+          await place.fetchFields({fields:['formattedAddress','location']});
+          if(!place.location)throw new Error('Location not available.');
+          const point={lat:place.location.lat(),lng:place.location.lng()};
+          const miles=distanceMiles(current,point);
+          if(miles>50){status('This address is outside the 50-mile area. Please choose another.');b.disabled=false;return;}
+          const name=place.formattedAddress||prediction.text?.text||input;
+          selectedAddress=name;$('address').value=name;$('selected').textContent=name;
+          $('navigate').href='https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(name);
+          $('navigate').classList.remove('hide');$('suggestions').textContent='';
+          sessionToken=new placesLib.AutocompleteSessionToken();
+          status('Address selected. Please verify before navigating.');log('Selected address: '+name);
+        }catch(e){b.disabled=false;status('Unable to verify this suggestion. Try another.');log('Place details error: '+e.message);}
+      };
+      $('suggestions').appendChild(b);
+    }
+    const info=document.createElement('p');info.className='muted';info.style.padding='0 12px';
+    info.textContent='Select an address to verify that it is within 50 miles of the current GPS location.';
+    $('suggestions').appendChild(info);
+  }catch(e){if(id!==activeRequest)return;$('suggestions').textContent='Unable to load suggestions. Check Google Places access.';log('Places error: '+e.message);}
+ }
+log('English interface ready');log('Speech API: '+(R?'available':'unavailable'));if(window.isSecureContext)gps();
+</script></body></html>
